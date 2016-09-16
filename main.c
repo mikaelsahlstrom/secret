@@ -14,6 +14,66 @@ static void print_help_text(void)
            "-o PATH\tOpen secret box.\n-c PATH\tCreate secret box.\n");
 }
 
+static uint32_t read_nonce(uint8_t nonce[NONCE_LEN])
+{
+    uint32_t r = SUCCESS;
+
+    uint32_t i;
+    for (i = 0; i < NONCE_LEN; i += 1)
+    {
+        nonce[i] = getchar();
+        if (nonce[i] == EOF)
+        {
+            r = ERROR;
+            break;
+        }
+    }
+
+    return r;
+}
+
+static uint32_t read_password(uint8_t **password, size_t *password_length)
+{
+    uint32_t r;
+
+    if (getline(password, password_length, stdin) == -1)
+    {
+        r = ERROR;
+    }
+    else
+    {
+        // password_length now includes the \n.
+        **password_length -= 1;
+        r = SUCCESS
+    }
+
+    return r;
+}
+
+static uint32_t derive_key(uint8_t key[KEY_LEN],
+                           uint8_t *password,
+                           size_t password_length,
+                           uint8_t nonce[NONCE_LEN])
+{
+    uint32_t r;
+
+    if (crypto_pwhash(key, KEY_LEN,
+                      password, password_length,
+                      nonce,
+                      crypto_pwhash_OPSLIMIT_INTERACTIVE,
+                      crypto_pwhash_MEMLIMIT_INTERACTIVE,
+                      crypto_pwhash_ALG_DEFAULT) == 0)
+    {
+        r = SUCCESS;
+    }
+    else
+    {
+        r = ERROR;
+    }
+
+    return r;
+}
+
 int main(int argc, char **argv)
 {
     uint32_t r = SUCCESS;
@@ -125,45 +185,17 @@ int main(int argc, char **argv)
 
             if (r == SUCCESS)
             {
-                // Read nonce.
-                uint32_t i;
-                for (i = 0; i < NONCE_LEN; i += 1)
-                {
-                    nonce[i] = getchar();
-                    if (nonce[i] == EOF)
-                    {
-                        r = ERROR;
-                        break;
-                    }
-                }
+                r = read_nonce(nonce);
             }
 
             if (r == SUCCESS)
             {
-                // Read password.
-                if (getline(&password, &password_length, stdin) == -1)
-                {
-                    r = ERROR;
-                }
-                else
-                {
-                    // password_length now includes the \n.
-                    password_length -= 1;
-                }
+                r = read_password(&password, &password_length);
             }
 
             if (r == SUCCESS)
             {
-                // Derive key.
-                if (crypto_pwhash(key, KEY_LEN,
-                                  password, password_length,
-                                  nonce,
-                                  crypto_pwhash_OPSLIMIT_INTERACTIVE,
-                                  crypto_pwhash_MEMLIMIT_INTERACTIVE,
-                                  crypto_pwhash_ALG_DEFAULT) != 0)
-                {
-                    r = ERROR;
-                }
+                r = derive_key(key, password, password_length, nonce);
             }
 
             if (r == SUCCESS)
@@ -194,12 +226,41 @@ int main(int argc, char **argv)
             }
 
             sodium_memzero(key, KEY_LEN);
+            sodium_memzero(password, password_length);
+
+            free(password);
             free(box);
         }
         else if (strncmp(argv[2], "-c", 2) == 0)
         {
             // Create secret box
+            uint8_t *password = NULL;
+            size_t password_length = 0;
+            uint8_t nonce[NONCE_LEN] = {0};
+            uint8_t key[KEY_LEN] = {0};
+            uint8_t *data = NULL;
 
+            r = read_nonce(nonce);
+
+            if (r == SUCCESS)
+            {
+                r = read_password(&password, &password_length);
+            }
+
+            if (r == SUCCESS)
+            {
+                r = derive_key(key, password, password_length, nonce);
+            }
+
+            if (r == SUCCESS)
+            {
+                // Read data.
+            }
+
+            if (r == SUCCESS)
+            {
+                // Create box.
+            }
         }
         else
         {
