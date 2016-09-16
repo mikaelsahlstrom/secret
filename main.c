@@ -10,7 +10,7 @@
 
 static void print_help_text(void)
 {
-    printf("Arguments: \n-h\tThis help text.\n-s\tCreate salt.\n"
+    printf("Arguments: \n-h\tThis help text.\n-n\tCreate nonce.\n"
            "-o PATH\tOpen secret box.\n-c PATH\tCreate secret box.\n");
 }
 
@@ -29,7 +29,7 @@ int main(int argc, char **argv)
             // Help
             print_help_text();
         }
-        else if (strncmp(argv[1], "-s", 2) == 0)
+        else if (strncmp(argv[1], "-n", 2) == 0)
         {
             // Create nonce.
             uint8_t nonce[NONCE_LEN];
@@ -199,7 +199,7 @@ int main(int argc, char **argv)
         else if (strncmp(argv[2], "-c", 2) == 0)
         {
             // Create secret box
-            
+
         }
         else
         {
