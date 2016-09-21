@@ -7,6 +7,7 @@
 
 #define NONCE_LEN crypto_box_SEEDBYTES
 #define KEY_LEN crypto_box_SEEDBYTES
+#define BUFF_SIZE 1024
 
 static void print_help_text(void)
 {
@@ -231,7 +232,7 @@ int main(int argc, char **argv)
             free(password);
             free(box);
         }
-        else if (strncmp(argv[2], "-c", 2) == 0)
+        else if ((strncmp(argv[1], "-c", 2) == 0) && (argc == 3))
         {
             // Create secret box
             uint8_t *password = NULL;
@@ -239,6 +240,10 @@ int main(int argc, char **argv)
             uint8_t nonce[NONCE_LEN] = {0};
             uint8_t key[KEY_LEN] = {0};
             uint8_t *data = NULL;
+            size_t data_size = 0;
+            size_t buff_size = BUFF_INCR;
+            uint8_t *box = NULL;
+            size_t box_size = 0;
 
             r = read_nonce(nonce);
 
@@ -255,12 +260,90 @@ int main(int argc, char **argv)
             if (r == SUCCESS)
             {
                 // Read data.
+                data = malloc(buff_size);
+                if (data != NULL)
+                {
+                    data[data_size++] = getchar();
+                    while ((r == SUCCESS) && (data[data_size - 1] != EOF))
+                    {
+                        if (data_size >= 2)
+                        {
+                            if ((data[data_size - 1] == '\n') &&
+                                (data[data_size - 2] == '\n'))
+                            {
+                                break;
+                            }
+
+                            if (data_size == buff_size)
+                            {
+                                buff_size += BUFF_INCR;
+                                uint8_t *tmp_data = realloc(data, buff_size);
+                                if (tmp_data != NULL)
+                                {
+                                    data = tmp_data;
+                                }
+                                else
+                                {
+                                    r = ERROR;
+                                }
+                            }
+                        }
+
+                        if (r == SUCCESS)
+                        {
+                            data[data_size++] = getchar();
+                        }
+                    }
+                }
+                else
+                {
+                    // Malloc of data failed.
+                    r = ERROR;
+                }
             }
 
             if (r == SUCCESS)
             {
                 // Create box.
+                if (crypto_aead_aes256gcm_encrypt(box,
+                                                  &box_size,
+                                                  data,
+                                                  data_size,
+                                                  (uint8_t*) &data_size,
+                                                  sizeof(size_t),
+                                                  NULL,
+                                                  nonce,
+                                                  key) != 0)
+                {
+                    r = ERROR;
+                }
             }
+
+            if (r == SUCCESS)
+            {
+                // Write box to file.
+                FILE *box_file = open(argv[2], "r");
+                if (box_file != NULL)
+                {
+                    if (fwrite(box, sizeof(uint8_t),
+                               box_size, box_file) != box_size)
+                    {
+                        r = ERROR;
+                    }
+                }
+                else
+                {
+                    // Open box_file failed.
+                    r = ERROR;
+                }
+            }
+
+            sodium_memzero(key, KEY_LEN);
+            sodium_memzero(password, password_length);
+            sodium_memzero(data, buff_size);
+
+            free(password);
+            free(data);
         }
         else
         {
