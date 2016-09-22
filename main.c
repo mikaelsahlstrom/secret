@@ -11,8 +11,8 @@
 
 static void print_help_text(void)
 {
-    printf("Arguments: \n-h\tThis help text.\n-n\tCreate nonce.\n"
-           "-o PATH\tOpen secret box.\n-c PATH\tCreate secret box.\n");
+    printf("Arguments: \n-h\t\tThis help text.\n-o PATH\t\tOpen secret box.\n"
+           "-c PATH\t\tCreate secret box and print nonce to stdout.\n");
 }
 
 static uint32_t read_nonce(uint8_t nonce[NONCE_LEN])
@@ -89,21 +89,6 @@ int main(int argc, char **argv)
         {
             // Help
             print_help_text();
-        }
-        else if (strncmp(argv[1], "-n", 2) == 0)
-        {
-            // Create nonce.
-            uint8_t nonce[NONCE_LEN];
-            randombytes_buf(nonce, NONCE_LEN);
-            if (r == SUCCESS)
-            {
-                uint32_t i;
-                for (i = 0; i < NONCE_LEN; i += 1)
-                {
-                    printf("%02x", nonce[i]);
-                }
-                printf("\n");
-            }
         }
         else if ((strncmp(argv[1], "-o", 2) == 0) && (argc == 3))
         {
@@ -186,7 +171,14 @@ int main(int argc, char **argv)
 
             if (r == SUCCESS)
             {
-                r = read_nonce(nonce);
+                // Create nonce.
+                randombytes_buf(nonce, NONCE_LEN);
+                uint32_t i;
+                for (i = 0; i < NONCE_LEN; i += 1)
+                {
+                    printf("%02x", nonce[i]);
+                }
+                printf("\n");
             }
 
             if (r == SUCCESS)
