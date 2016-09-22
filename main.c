@@ -7,7 +7,7 @@
 
 #define NONCE_LEN crypto_box_SEEDBYTES
 #define KEY_LEN crypto_box_SEEDBYTES
-#define BUFF_SIZE 1024
+#define BUFF_INCR 1024
 
 static void print_help_text(void)
 {
@@ -33,7 +33,7 @@ static uint32_t read_nonce(uint8_t nonce[NONCE_LEN])
     return r;
 }
 
-static uint32_t read_password(uint8_t **password, size_t *password_length)
+static uint32_t read_password(char **password, size_t *password_length)
 {
     uint32_t r;
 
@@ -44,15 +44,15 @@ static uint32_t read_password(uint8_t **password, size_t *password_length)
     else
     {
         // password_length now includes the \n.
-        **password_length -= 1;
-        r = SUCCESS
+        *password_length -= 1;
+        r = SUCCESS;
     }
 
     return r;
 }
 
 static uint32_t derive_key(uint8_t key[KEY_LEN],
-                           uint8_t *password,
+                           char *password,
                            size_t password_length,
                            uint8_t nonce[NONCE_LEN])
 {
@@ -110,7 +110,7 @@ int main(int argc, char **argv)
             // Open secret box.
             uint8_t *box = NULL;
             uint32_t box_size = 0;
-            uint8_t *password = NULL;
+            char *password = NULL;
             size_t password_length = 0;
             uint8_t nonce[NONCE_LEN] = {0};
             uint8_t key[KEY_LEN] = {0};
@@ -202,8 +202,8 @@ int main(int argc, char **argv)
             if (r == SUCCESS)
             {
                 // Decrypt box.
-                uint8_t decrypted_box[box_size + 1] = {0};
-                uint32_t decrypted_box_size = 0;
+                uint8_t decrypted_box[box_size + 1];
+                unsigned long long int decrypted_box_size = 0;
                 uint8_t real_size[sizeof(uint32_t)] = {0};
 
                 if (crypto_aead_aes256gcm_decrypt(decrypted_box,
@@ -219,11 +219,11 @@ int main(int argc, char **argv)
                     // Message forged or in some way not ok at all.
                     r = ERROR;
                 }
-            }
-
-            if (r == SUCCESS)
-            {
-                printf("%s\n", decrypted_box);
+                else
+                {
+                    printf("%s\n", decrypted_box);
+                    sodium_memzero(decrypted_box, decrypted_box_size);
+                }
             }
 
             sodium_memzero(key, KEY_LEN);
@@ -235,7 +235,7 @@ int main(int argc, char **argv)
         else if ((strncmp(argv[1], "-c", 2) == 0) && (argc == 3))
         {
             // Create secret box
-            uint8_t *password = NULL;
+            char *password = NULL;
             size_t password_length = 0;
             uint8_t nonce[NONCE_LEN] = {0};
             uint8_t key[KEY_LEN] = {0};
@@ -243,7 +243,7 @@ int main(int argc, char **argv)
             size_t data_size = 0;
             size_t buff_size = BUFF_INCR;
             uint8_t *box = NULL;
-            size_t box_size = 0;
+            unsigned long long int box_size = 0;
 
             r = read_nonce(nonce);
 
@@ -322,7 +322,7 @@ int main(int argc, char **argv)
             if (r == SUCCESS)
             {
                 // Write box to file.
-                FILE *box_file = open(argv[2], "r");
+                FILE *box_file = fopen(argv[2], "r");
                 if (box_file != NULL)
                 {
                     if (fwrite(box, sizeof(uint8_t),
@@ -330,6 +330,8 @@ int main(int argc, char **argv)
                     {
                         r = ERROR;
                     }
+
+                    fclose(box_file);
                 }
                 else
                 {
