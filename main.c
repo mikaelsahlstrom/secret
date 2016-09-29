@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sodium.h>
+#include <termios.h>
 
 #define SUCCESS 0
 #define ERROR 1
@@ -17,16 +18,32 @@ static void print_help_text(void)
 
 static uint32_t read_nonce(uint8_t nonce[NONCE_LEN])
 {
+    char nonce_str[NONCE_LEN * 2];
+    size_t nonce_len = 0;
     uint32_t r = SUCCESS;
 
     uint32_t i;
-    for (i = 0; i < NONCE_LEN; i += 1)
+    for (i = 0; i < NONCE_LEN * 2; i += 1)
     {
-        nonce[i] = getchar();
-        if (nonce[i] == EOF)
+        nonce_str[i] = getchar();
+
+        if (nonce_str[i] == EOF)
         {
             r = ERROR;
             break;
+        }
+    }
+
+    if (sodium_hex2bin(nonce, NONCE_LEN, nonce_str, NONCE_LEN * 2,
+                       NULL, &nonce_len, NULL) != 0)
+    {
+        r = ERROR;
+    }
+    else
+    {
+        if (nonce_len != NONCE_LEN)
+        {
+            r = ERROR;
         }
     }
 
@@ -35,17 +52,71 @@ static uint32_t read_nonce(uint8_t nonce[NONCE_LEN])
 
 static uint32_t read_password(char **password, size_t *password_length)
 {
-    uint32_t r;
+    uint32_t r = SUCCESS;
+    *password_length = 0;
+    size_t buff_len = BUFF_INCR;
+    *password = malloc(BUFF_INCR);
 
-    if (getline(password, password_length, stdin) == -1)
+    if (*password != NULL)
     {
-        r = ERROR;
+        struct termios old, new;
+        if (tcgetattr(fileno(stdin), &old) == 0)
+        {
+            new = old;
+            new.c_lflag &= ~ECHO;
+            if (tcsetattr(fileno(stdin), TCSAFLUSH, &new) == 0)
+            {
+                size_t c_len = 0;
+                char c = getchar();
+                while ((r == SUCCESS) && (c != '\n') && (c != EOF))
+                {
+                    (*password)[*password_length] = c;
+                    *password_length += 1;
+
+                    if (*password_length == buff_len)
+                    {
+                        buff_len += BUFF_INCR;
+                        char *tmp = realloc(*password, buff_len);
+                        if (tmp != NULL)
+                        {
+                            *password = tmp;
+                        }
+                        else
+                        {
+                            // Realloc failed.
+                            r = ERROR;
+                        }
+                    }
+
+                    if (r == SUCCESS)
+                    {
+                        c = getchar();
+                    }
+                }
+
+                (void) tcsetattr(fileno(stdin), TCSAFLUSH, &old);
+            }
+            else
+            {
+                // Can not unset ECHO flag.
+                r = ERROR;
+            }
+        }
+        else
+        {
+            // Can not get term flags.
+            r = ERROR;
+        }
     }
     else
     {
-        // password_length now includes the \n.
-        *password_length -= 1;
-        r = SUCCESS;
+        // Malloc failed.
+        r = ERROR;
+    }
+
+    if (*password_length == 0)
+    {
+        r = ERROR;
     }
 
     return r;
@@ -171,14 +242,7 @@ int main(int argc, char **argv)
 
             if (r == SUCCESS)
             {
-                // Create nonce.
-                randombytes_buf(nonce, NONCE_LEN);
-                uint32_t i;
-                for (i = 0; i < NONCE_LEN; i += 1)
-                {
-                    printf("%02x", nonce[i]);
-                }
-                printf("\n");
+                r = read_nonce(nonce);
             }
 
             if (r == SUCCESS)
@@ -237,11 +301,21 @@ int main(int argc, char **argv)
             uint8_t *box = NULL;
             unsigned long long int box_size = 0;
 
-            r = read_nonce(nonce);
+            // Create nonce.
+            printf("Nonce: ");
+            randombytes_buf(nonce, NONCE_LEN);
+            uint32_t i;
+            for (i = 0; i < NONCE_LEN; i += 1)
+            {
+                printf("%02x", nonce[i]);
+            }
+            printf("\n");
 
             if (r == SUCCESS)
             {
+                printf("Enter password: ");
                 r = read_password(&password, &password_length);
+                printf("\n");
             }
 
             if (r == SUCCESS)
@@ -255,6 +329,7 @@ int main(int argc, char **argv)
                 data = malloc(buff_size);
                 if (data != NULL)
                 {
+                    printf("Enter data (two enters to mark end):\n");
                     data[data_size++] = getchar();
                     while ((r == SUCCESS) && (data[data_size - 1] != EOF))
                     {
@@ -296,17 +371,26 @@ int main(int argc, char **argv)
 
             if (r == SUCCESS)
             {
-                // Create box.
-                if (crypto_aead_aes256gcm_encrypt(box,
-                                                  &box_size,
-                                                  data,
-                                                  data_size,
-                                                  (uint8_t*) &data_size,
-                                                  sizeof(size_t),
-                                                  NULL,
-                                                  nonce,
-                                                  key) != 0)
+                box = malloc(data_size + crypto_aead_aes256gcm_ABYTES);
+                if (box != NULL)
                 {
+                    // Create box.
+                    if (crypto_aead_aes256gcm_encrypt(box,
+                        &box_size,
+                        data,
+                        data_size,
+                        (unsigned char*) &data_size,
+                        sizeof(size_t),
+                        NULL,
+                        nonce,
+                        key) != 0)
+                    {
+                        r = ERROR;
+                    }
+                }
+                else
+                {
+                    // Malloc of box failed.
                     r = ERROR;
                 }
             }
@@ -314,7 +398,7 @@ int main(int argc, char **argv)
             if (r == SUCCESS)
             {
                 // Write box to file.
-                FILE *box_file = fopen(argv[2], "r");
+                FILE *box_file = fopen(argv[2], "w");
                 if (box_file != NULL)
                 {
                     if (fwrite(box, sizeof(uint8_t),
