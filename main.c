@@ -34,16 +34,22 @@ static uint32_t read_nonce(uint8_t nonce[NONCE_LEN])
         }
     }
 
-    if (sodium_hex2bin(nonce, NONCE_LEN, nonce_str, NONCE_LEN * 2,
-                       NULL, &nonce_len, NULL) != 0)
+    if (r == SUCCESS)
     {
-        r = ERROR;
-    }
-    else
-    {
-        if (nonce_len != NONCE_LEN)
+        // Swallow enter.
+        (void) getchar();
+
+        if (sodium_hex2bin(nonce, NONCE_LEN, nonce_str, NONCE_LEN * 2,
+                           NULL, &nonce_len, NULL) != 0)
         {
             r = ERROR;
+        }
+        else
+        {
+            if (nonce_len != NONCE_LEN)
+            {
+                r = ERROR;
+            }
         }
     }
 
@@ -242,11 +248,13 @@ int main(int argc, char **argv)
 
             if (r == SUCCESS)
             {
+                printf("Enter nonce: ");
                 r = read_nonce(nonce);
             }
 
             if (r == SUCCESS)
             {
+                printf("Enter password: ");
                 r = read_password(&password, &password_length);
             }
 
