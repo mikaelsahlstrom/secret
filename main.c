@@ -6,8 +6,8 @@
 #define SUCCESS 0
 #define ERROR 1
 
-#define NONCE_LEN crypto_box_SEEDBYTES
-#define KEY_LEN crypto_box_SEEDBYTES
+#define NONCE_LEN crypto_secretbox_NONCEBYTES
+#define KEY_LEN crypto_secretbox_KEYBYTES
 #define BUFF_INCR 1024
 
 static void print_help_text(void)
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
                     {
                         if (fseek(box_file, 0L, SEEK_SET) == 0)
                         {
-                            box = malloc(box_file_size + 1);
+                            box = malloc(box_file_size);
                             if (box != NULL)
                             {
                                 size_t read_bytes = fread(box,
@@ -196,8 +196,7 @@ int main(int argc, char **argv)
                                                           box_file);
                                 if (ferror(box_file) == 0)
                                 {
-                                    box[read_bytes] = '\0';
-                                    box_size = read_bytes + 1;
+                                    box_size = read_bytes;
                                 }
                                 else
                                 {
@@ -240,7 +239,7 @@ int main(int argc, char **argv)
             if (r == SUCCESS)
             {
                 // Is box size sensible?
-                if (box_size < crypto_aead_aes256gcm_ABYTES)
+                if (box_size <= crypto_secretbox_MACBYTES)
                 {
                     r = ERROR;
                 }
@@ -266,27 +265,23 @@ int main(int argc, char **argv)
             if (r == SUCCESS)
             {
                 // Decrypt box.
-                uint8_t decrypted_box[box_size + 1];
-                unsigned long long int decrypted_box_size = 0;
-                uint8_t real_size[sizeof(uint32_t)] = {0};
+                uint8_t decrypted_box[box_size - crypto_secretbox_MACBYTES + 1];
 
-                if (crypto_aead_aes256gcm_decrypt(decrypted_box,
-                                                  &decrypted_box_size,
-                                                  NULL,
-                                                  box,
-                                                  box_size,
-                                                  real_size,
-                                                  sizeof(uint32_t),
-                                                  nonce,
-                                                  key) != 0)
+                if (crypto_secretbox_open_easy(decrypted_box,
+                                               box,
+                                               box_size,
+                                               nonce,
+                                               key) != 0)
                 {
                     // Message forged or in some way not ok at all.
                     r = ERROR;
                 }
                 else
                 {
-                    printf("%s\n", decrypted_box);
-                    sodium_memzero(decrypted_box, decrypted_box_size);
+                    decrypted_box[box_size - crypto_secretbox_MACBYTES] = '\0';
+                    printf("\n%s\n", decrypted_box);
+                    sodium_memzero(decrypted_box,
+                                   box_size - crypto_secretbox_MACBYTES);
                 }
             }
 
@@ -346,6 +341,8 @@ int main(int argc, char **argv)
                             if ((data[data_size - 1] == '\n') &&
                                 (data[data_size - 2] == '\n'))
                             {
+                                // Do not include last two \n.
+                                data_size -= 2;
                                 break;
                             }
 
@@ -379,19 +376,16 @@ int main(int argc, char **argv)
 
             if (r == SUCCESS)
             {
-                box = malloc(data_size + crypto_aead_aes256gcm_ABYTES);
+                box_size = data_size + crypto_secretbox_MACBYTES;
+                box = malloc(box_size);
                 if (box != NULL)
                 {
                     // Create box.
-                    if (crypto_aead_aes256gcm_encrypt(box,
-                        &box_size,
-                        data,
-                        data_size,
-                        (unsigned char*) &data_size,
-                        sizeof(size_t),
-                        NULL,
-                        nonce,
-                        key) != 0)
+                    if (crypto_secretbox_easy(box,
+                                              data,
+                                              data_size,
+                                              nonce,
+                                              key) != 0)
                     {
                         r = ERROR;
                     }
