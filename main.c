@@ -159,6 +159,131 @@ static uint32_t derive_key(uint8_t key[KEY_LEN],
     return r;
 }
 
+static uint32_t open_box(char *argv[])
+{
+    uint32_t r = SUCCESS;
+    uint8_t *box = NULL;
+    uint32_t box_size = 0;
+    char *password = NULL;
+    size_t password_length = 0;
+    uint8_t nonce[NONCE_LEN] = {0};
+    uint8_t key[KEY_LEN] = {0};
+
+    FILE *box_file = fopen(argv[2], "r");
+    if (box_file != NULL)
+    {
+        if (fseek(box_file, 0L, SEEK_END) == 0)
+        {
+            long box_file_size = ftell(box_file);
+            if (box_file_size != -1)
+            {
+                if (fseek(box_file, 0L, SEEK_SET) == 0)
+                {
+                    box = malloc(box_file_size);
+                    if (box != NULL)
+                    {
+                        size_t read_bytes = fread(box,
+                                                  1,
+                                                  box_file_size,
+                                                  box_file);
+                        if (ferror(box_file) == 0)
+                        {
+                            box_size = read_bytes;
+                        }
+                        else
+                        {
+                            // Read bytes failed.
+                            r = ERROR;
+                        }
+                    }
+                    else
+                    {
+                        // Malloc of box content failed.
+                        r = ERROR;
+                    }
+                }
+                else
+                {
+                    // Fseek to start of box content failed.
+                    r = ERROR;
+                }
+            }
+            else
+            {
+                // Ftell of box content size failed.
+                r  = ERROR;
+            }
+        }
+        else
+        {
+            // Fseek to box content end failed.
+            r = ERROR;
+        }
+
+        fclose(box_file);
+    }
+    else
+    {
+        // Fopen of box file failed.
+        r = ERROR;
+    }
+
+    if (r == SUCCESS)
+    {
+        // Is box size sensible?
+        if (box_size <= crypto_secretbox_MACBYTES)
+        {
+            r = ERROR;
+        }
+    }
+
+    if (r == SUCCESS)
+    {
+        printf("Enter nonce: ");
+        r = read_nonce(nonce);
+    }
+
+    if (r == SUCCESS)
+    {
+        printf("Enter password: ");
+        r = read_password(&password, &password_length);
+    }
+
+    if (r == SUCCESS)
+    {
+        r = derive_key(key, password, password_length, nonce);
+    }
+
+    if (r == SUCCESS)
+    {
+        // Decrypt box.
+        uint8_t decrypted_box[box_size - crypto_secretbox_MACBYTES + 1];
+
+        if (crypto_secretbox_open_easy(decrypted_box,
+                                       box,
+                                       box_size,
+                                       nonce,
+                                       key) != 0)
+        {
+            // Message forged or in some way not ok at all.
+            r = ERROR;
+        }
+        else
+        {
+            decrypted_box[box_size - crypto_secretbox_MACBYTES] = '\0';
+            printf("\n%s\n", decrypted_box);
+            sodium_memzero(decrypted_box,
+                           box_size - crypto_secretbox_MACBYTES);
+        }
+    }
+
+    sodium_memzero(key, KEY_LEN);
+    sodium_memzero(password, password_length);
+
+    free(password);
+    free(box);
+}
+
 int main(int argc, char **argv)
 {
     uint32_t r = SUCCESS;
@@ -176,127 +301,7 @@ int main(int argc, char **argv)
         }
         else if ((strncmp(argv[1], "-o", 2) == 0) && (argc == 3))
         {
-            // Open secret box.
-            uint8_t *box = NULL;
-            uint32_t box_size = 0;
-            char *password = NULL;
-            size_t password_length = 0;
-            uint8_t nonce[NONCE_LEN] = {0};
-            uint8_t key[KEY_LEN] = {0};
-
-            FILE *box_file = fopen(argv[2], "r");
-            if (box_file != NULL)
-            {
-                if (fseek(box_file, 0L, SEEK_END) == 0)
-                {
-                    long box_file_size = ftell(box_file);
-                    if (box_file_size != -1)
-                    {
-                        if (fseek(box_file, 0L, SEEK_SET) == 0)
-                        {
-                            box = malloc(box_file_size);
-                            if (box != NULL)
-                            {
-                                size_t read_bytes = fread(box,
-                                                          1,
-                                                          box_file_size,
-                                                          box_file);
-                                if (ferror(box_file) == 0)
-                                {
-                                    box_size = read_bytes;
-                                }
-                                else
-                                {
-                                    // Read bytes failed.
-                                    r = ERROR;
-                                }
-                            }
-                            else
-                            {
-                                // Malloc of box content failed.
-                                r = ERROR;
-                            }
-                        }
-                        else
-                        {
-                            // Fseek to start of box content failed.
-                            r = ERROR;
-                        }
-                    }
-                    else
-                    {
-                        // Ftell of box content size failed.
-                        r  = ERROR;
-                    }
-                }
-                else
-                {
-                    // Fseek to box content end failed.
-                    r = ERROR;
-                }
-
-                fclose(box_file);
-            }
-            else
-            {
-                // Fopen of box file failed.
-                r = ERROR;
-            }
-
-            if (r == SUCCESS)
-            {
-                // Is box size sensible?
-                if (box_size <= crypto_secretbox_MACBYTES)
-                {
-                    r = ERROR;
-                }
-            }
-
-            if (r == SUCCESS)
-            {
-                printf("Enter nonce: ");
-                r = read_nonce(nonce);
-            }
-
-            if (r == SUCCESS)
-            {
-                printf("Enter password: ");
-                r = read_password(&password, &password_length);
-            }
-
-            if (r == SUCCESS)
-            {
-                r = derive_key(key, password, password_length, nonce);
-            }
-
-            if (r == SUCCESS)
-            {
-                // Decrypt box.
-                uint8_t decrypted_box[box_size - crypto_secretbox_MACBYTES + 1];
-
-                if (crypto_secretbox_open_easy(decrypted_box,
-                                               box,
-                                               box_size,
-                                               nonce,
-                                               key) != 0)
-                {
-                    // Message forged or in some way not ok at all.
-                    r = ERROR;
-                }
-                else
-                {
-                    decrypted_box[box_size - crypto_secretbox_MACBYTES] = '\0';
-                    printf("\n%s\n", decrypted_box);
-                    sodium_memzero(decrypted_box,
-                                   box_size - crypto_secretbox_MACBYTES);
-                }
-            }
-
-            sodium_memzero(key, KEY_LEN);
-            sodium_memzero(password, password_length);
-
-            free(password);
-            free(box);
+            r = open_box(argv);
         }
         else if ((strncmp(argv[1], "-c", 2) == 0) && (argc == 3))
         {
