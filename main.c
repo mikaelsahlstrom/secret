@@ -284,6 +284,142 @@ static uint32_t open_box(char *argv[])
     free(box);
 }
 
+static uint32_t create_box(char *argv[])
+{
+    // Create secret box
+    uint32_t r = SUCCESS;
+    char *password = NULL;
+    size_t password_length = 0;
+    uint8_t nonce[NONCE_LEN] = {0};
+    uint8_t key[KEY_LEN] = {0};
+    uint8_t *data = NULL;
+    size_t data_size = 0;
+    size_t buff_size = BUFF_INCR;
+    uint8_t *box = NULL;
+    unsigned long long int box_size = 0;
+
+    // Create nonce.
+    printf("Nonce: ");
+    randombytes_buf(nonce, NONCE_LEN);
+    uint32_t i;
+    for (i = 0; i < NONCE_LEN; i += 1)
+    {
+        printf("%02x", nonce[i]);
+    }
+    printf("\n");
+
+    if (r == SUCCESS)
+    {
+        printf("Enter password: ");
+        r = read_password(&password, &password_length);
+        printf("\n");
+    }
+
+    if (r == SUCCESS)
+    {
+        r = derive_key(key, password, password_length, nonce);
+    }
+
+    if (r == SUCCESS)
+    {
+        // Read data.
+        data = malloc(buff_size);
+        if (data != NULL)
+        {
+            printf("Enter data (two enters to mark end):\n");
+            data[data_size++] = getchar();
+            while ((r == SUCCESS) && (data[data_size - 1] != EOF))
+            {
+                if (data_size >= 2)
+                {
+                    if ((data[data_size - 1] == '\n') &&
+                        (data[data_size - 2] == '\n'))
+                    {
+                        // Do not include last two \n.
+                        data_size -= 2;
+                        break;
+                    }
+
+                    if (data_size == buff_size)
+                    {
+                        buff_size += BUFF_INCR;
+                        uint8_t *tmp_data = realloc(data, buff_size);
+                        if (tmp_data != NULL)
+                        {
+                            data = tmp_data;
+                        }
+                        else
+                        {
+                            r = ERROR;
+                        }
+                    }
+                }
+
+                if (r == SUCCESS)
+                {
+                    data[data_size++] = getchar();
+                }
+            }
+        }
+        else
+        {
+            // Malloc of data failed.
+            r = ERROR;
+        }
+    }
+
+    if (r == SUCCESS)
+    {
+        box_size = data_size + crypto_secretbox_MACBYTES;
+        box = malloc(box_size);
+        if (box != NULL)
+        {
+            // Create box.
+            if (crypto_secretbox_easy(box,
+                                      data,
+                                      data_size,
+                                      nonce,
+                                      key) != 0)
+            {
+                r = ERROR;
+            }
+        }
+        else
+        {
+            // Malloc of box failed.
+            r = ERROR;
+        }
+    }
+
+    if (r == SUCCESS)
+    {
+        // Write box to file.
+        FILE *box_file = fopen(argv[2], "w");
+        if (box_file != NULL)
+        {
+            if (fwrite(box, sizeof(uint8_t),
+                       box_size, box_file) != box_size)
+            {
+                r = ERROR;
+            }
+
+            fclose(box_file);
+        }
+        else
+        {
+            // Open box_file failed.
+            r = ERROR;
+        }
+    }
+
+    sodium_memzero(key, KEY_LEN);
+    sodium_memzero(password, password_length);
+    sodium_memzero(data, buff_size);
+
+    free(password);
+    free(data);
+}
+
 int main(int argc, char **argv)
 {
     uint32_t r = SUCCESS;
@@ -305,137 +441,7 @@ int main(int argc, char **argv)
         }
         else if ((strncmp(argv[1], "-c", 2) == 0) && (argc == 3))
         {
-            // Create secret box
-            char *password = NULL;
-            size_t password_length = 0;
-            uint8_t nonce[NONCE_LEN] = {0};
-            uint8_t key[KEY_LEN] = {0};
-            uint8_t *data = NULL;
-            size_t data_size = 0;
-            size_t buff_size = BUFF_INCR;
-            uint8_t *box = NULL;
-            unsigned long long int box_size = 0;
-
-            // Create nonce.
-            printf("Nonce: ");
-            randombytes_buf(nonce, NONCE_LEN);
-            uint32_t i;
-            for (i = 0; i < NONCE_LEN; i += 1)
-            {
-                printf("%02x", nonce[i]);
-            }
-            printf("\n");
-
-            if (r == SUCCESS)
-            {
-                printf("Enter password: ");
-                r = read_password(&password, &password_length);
-                printf("\n");
-            }
-
-            if (r == SUCCESS)
-            {
-                r = derive_key(key, password, password_length, nonce);
-            }
-
-            if (r == SUCCESS)
-            {
-                // Read data.
-                data = malloc(buff_size);
-                if (data != NULL)
-                {
-                    printf("Enter data (two enters to mark end):\n");
-                    data[data_size++] = getchar();
-                    while ((r == SUCCESS) && (data[data_size - 1] != EOF))
-                    {
-                        if (data_size >= 2)
-                        {
-                            if ((data[data_size - 1] == '\n') &&
-                                (data[data_size - 2] == '\n'))
-                            {
-                                // Do not include last two \n.
-                                data_size -= 2;
-                                break;
-                            }
-
-                            if (data_size == buff_size)
-                            {
-                                buff_size += BUFF_INCR;
-                                uint8_t *tmp_data = realloc(data, buff_size);
-                                if (tmp_data != NULL)
-                                {
-                                    data = tmp_data;
-                                }
-                                else
-                                {
-                                    r = ERROR;
-                                }
-                            }
-                        }
-
-                        if (r == SUCCESS)
-                        {
-                            data[data_size++] = getchar();
-                        }
-                    }
-                }
-                else
-                {
-                    // Malloc of data failed.
-                    r = ERROR;
-                }
-            }
-
-            if (r == SUCCESS)
-            {
-                box_size = data_size + crypto_secretbox_MACBYTES;
-                box = malloc(box_size);
-                if (box != NULL)
-                {
-                    // Create box.
-                    if (crypto_secretbox_easy(box,
-                                              data,
-                                              data_size,
-                                              nonce,
-                                              key) != 0)
-                    {
-                        r = ERROR;
-                    }
-                }
-                else
-                {
-                    // Malloc of box failed.
-                    r = ERROR;
-                }
-            }
-
-            if (r == SUCCESS)
-            {
-                // Write box to file.
-                FILE *box_file = fopen(argv[2], "w");
-                if (box_file != NULL)
-                {
-                    if (fwrite(box, sizeof(uint8_t),
-                               box_size, box_file) != box_size)
-                    {
-                        r = ERROR;
-                    }
-
-                    fclose(box_file);
-                }
-                else
-                {
-                    // Open box_file failed.
-                    r = ERROR;
-                }
-            }
-
-            sodium_memzero(key, KEY_LEN);
-            sodium_memzero(password, password_length);
-            sodium_memzero(data, buff_size);
-
-            free(password);
-            free(data);
+            r = create_box(argv);
         }
         else
         {
