@@ -56,11 +56,45 @@ static uint32_t read_nonce(uint8_t nonce[NONCE_LEN])
     return r;
 }
 
+static uint32_t read_chars(char **password, size_t *password_length)
+{
+    size_t buff_len = BUFF_INCR;
+    uint32_t r = SUCCESS;
+    size_t c_len = 0;
+    char c = getchar();
+    while ((r == SUCCESS) && (c != '\n') && (c != EOF))
+    {
+        (*password)[*password_length] = c;
+        *password_length += 1;
+
+        if (*password_length == buff_len)
+        {
+            buff_len += BUFF_INCR;
+            char *tmp = realloc(*password, buff_len);
+            if (tmp != NULL)
+            {
+                *password = tmp;
+            }
+            else
+            {
+                // Realloc failed.
+                r = ERROR;
+            }
+        }
+
+        if (r == SUCCESS)
+        {
+            c = getchar();
+        }
+    }
+
+    return r;
+}
+
 static uint32_t read_password(char **password, size_t *password_length)
 {
     uint32_t r = SUCCESS;
     *password_length = 0;
-    size_t buff_len = BUFF_INCR;
     *password = malloc(BUFF_INCR);
 
     if (*password != NULL)
@@ -72,34 +106,7 @@ static uint32_t read_password(char **password, size_t *password_length)
             new.c_lflag &= ~ECHO;
             if (tcsetattr(fileno(stdin), TCSAFLUSH, &new) == 0)
             {
-                size_t c_len = 0;
-                char c = getchar();
-                while ((r == SUCCESS) && (c != '\n') && (c != EOF))
-                {
-                    (*password)[*password_length] = c;
-                    *password_length += 1;
-
-                    if (*password_length == buff_len)
-                    {
-                        buff_len += BUFF_INCR;
-                        char *tmp = realloc(*password, buff_len);
-                        if (tmp != NULL)
-                        {
-                            *password = tmp;
-                        }
-                        else
-                        {
-                            // Realloc failed.
-                            r = ERROR;
-                        }
-                    }
-
-                    if (r == SUCCESS)
-                    {
-                        c = getchar();
-                    }
-                }
-
+                r = read_chars(password, password_length);
                 (void) tcsetattr(fileno(stdin), TCSAFLUSH, &old);
             }
             else
